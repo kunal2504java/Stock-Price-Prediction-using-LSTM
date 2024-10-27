@@ -1,0 +1,98 @@
+#IT IS FOR AAPL , MSFT AND GOOGL STOCKS ONLY , MORE STOCK OPTIONS WILL BE ADDED SOON
+#YOU CAN RUN THIS CODE IN GOOGLE COLAB AND CHECK THE OUTPUT , IT WILL WORK SMOOTHLY
+import yfinance as yf
+import pandas as pd
+import numpy as np
+import matplotlib.pyplot as plt
+from sklearn.preprocessing import MinMaxScaler
+from tensorflow.keras.models import Sequential
+from tensorflow.keras.layers import LSTM, Dense
+from sklearn.metrics import mean_absolute_error, mean_squared_error
+
+# Step 1: Load data for specific stocks
+stock_symbols = ["AAPL", "MSFT", "GOOGL"]
+data = yf.download(stock_symbols, start="2020-01-01", end="2023-01-01")['Adj Close']
+
+# Step 2: Plot historical stock data
+plt.figure(figsize=(12, 6))
+for stock in stock_symbols:
+    plt.plot(data.index, data[stock], label=stock)
+plt.title("Historical Stock Prices")
+plt.xlabel("Date")
+plt.ylabel("Adjusted Closing Price")
+plt.legend()
+plt.show()
+
+# Step 3: Preprocess each stock's data
+scalers = {}
+scaled_data = {}
+
+# Normalize data for each stock individually
+for stock in stock_symbols:
+    scaler = MinMaxScaler(feature_range=(0, 1))
+    scaled_data[stock] = scaler.fit_transform(data[stock].values.reshape(-1, 1))
+    scalers[stock] = scaler
+
+# Helper function to create sequences
+def create_sequences(data, seq_length=60):
+    x, y = [], []
+    for i in range(seq_length, len(data)):
+        x.append(data[i-seq_length:i, 0])
+        y.append(data[i, 0])
+    return np.array(x), np.array(y)
+
+# Step 4: Train and forecast with LSTM for each stock
+seq_length = 60
+predictions = {}
+
+for stock in stock_symbols:
+    stock_data = scaled_data[stock]
+    x, y = create_sequences(stock_data, seq_length)
+
+    # Split data into train and test sets
+    train_size = int(0.8 * len(x))
+    x_train, y_train = x[:train_size], y[:train_size]
+    x_test, y_test = x[train_size:], y[train_size:]
+
+    # Reshape for LSTM input
+    x_train = np.reshape(x_train, (x_train.shape[0], x_train.shape[1], 1))
+    x_test = np.reshape(x_test, (x_test.shape[0], x_test.shape[1], 1))
+
+    # Build LSTM model
+    model = Sequential([
+        LSTM(50, return_sequences=True, input_shape=(x_train.shape[1], 1)),
+        LSTM(50, return_sequences=False),
+        Dense(25),
+        Dense(1)
+    ])
+
+    model.compile(optimizer='adam', loss='mean_squared_error')
+    model.fit(x_train, y_train, batch_size=1, epochs=5)
+
+    # Make predictions and inverse transform
+    predicted_stock_price = model.predict(x_test)
+    predicted_stock_price = scalers[stock].inverse_transform(predicted_stock_price)
+    real_stock_price = scalers[stock].inverse_transform(y_test.reshape(-1, 1))
+
+    # Store predictions for each stock
+    predictions[stock] = (real_stock_price, predicted_stock_price)
+
+# Step 5: Plot the predictions vs. actual prices for each stock
+plt.figure(figsize=(12, 6))
+for stock in stock_symbols:
+    real_stock_price, predicted_stock_price = predictions[stock]
+    plt.plot(real_stock_price, label=f'{stock} Actual')
+    plt.plot(predicted_stock_price, label=f'{stock} Predicted')
+plt.title("Stock Price Prediction with LSTM")
+plt.xlabel("Time")
+plt.ylabel("Stock Price")
+plt.legend()
+plt.show()
+
+# Step 6: Calculate and display accuracy metrics for each stock
+for stock in stock_symbols:
+    real_stock_price, predicted_stock_price = predictions[stock]
+    mae = mean_absolute_error(real_stock_price, predicted_stock_price)
+    mse = mean_squared_error(real_stock_price, predicted_stock_price)
+    print(f"{stock} - Mean Absolute Error (MAE): {mae}")
+    print(f"{stock} - Mean Squared Error (MSE): {mse}")
