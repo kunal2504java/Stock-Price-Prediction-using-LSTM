@@ -1,0 +1,77 @@
+# Install required libraries (run this once)
+#UNDER CONSTRUCTION
+!pip install streamlit yfinance tensorflow scikit-learn joblib matplotlib
+
+import streamlit as st
+import yfinance as yf
+import numpy as np
+import matplotlib.pyplot as plt
+from tensorflow.keras.models import load_model
+from sklearn.preprocessing import MinMaxScaler
+import joblib
+import pandas as pd
+import os
+
+# Google Colab does not support running Streamlit directly, so we'll skip the Streamlit-specific parts.
+# Instead, we will use basic print statements and matplotlib for plotting.
+
+# Assuming you saved models with filenames like "model_AAPL.h5" and scalers as "scaler_AAPL.pkl"
+stock_symbols = ["AAPL", "MSFT", "GOOGL"]  # You can add more stock symbols here
+model_folder = '/content/models'  # Assuming the models and scalers are in '/content/models'
+
+# Make sure your models and scalers are uploaded to the 'model_folder'
+# Check if folder exists
+if not os.path.exists(model_folder):
+    os.makedirs(model_folder)
+
+# Load pre-trained models and scalers (Check that model and scaler files are in the right path)
+models = {stock: load_model(os.path.join(model_folder, f"model_{stock}.h5")) for stock in stock_symbols}
+scalers = {stock: joblib.load(os.path.join(model_folder, f"scaler_{stock}.pkl")) for stock in stock_symbols}
+
+# Function to fetch stock data and make predictions
+def stock_price_prediction(stock, start_date, end_date):
+    print(f"Fetching data for {stock} from {start_date} to {end_date}")
+
+    # Fetch stock data
+    data = yf.download(stock, start=start_date, end=end_date)['Adj Close']
+
+    # Scale and prepare data
+    scaler = scalers[stock]
+    scaled_data = scaler.transform(data.values.reshape(-1, 1))
+    seq_length = 60
+
+    # Create sequences for prediction
+    def create_sequences(data, seq_length):
+        x = []
+        for i in range(seq_length, len(data)):
+            x.append(data[i-seq_length:i, 0])
+        return np.array(x)
+
+    x_test = create_sequences(scaled_data, seq_length)
+    x_test = np.reshape(x_test, (x_test.shape[0], x_test.shape[1], 1))
+
+    # Make predictions
+    model = models[stock]
+    predicted_stock_price = model.predict(x_test)
+    predicted_stock_price = scaler.inverse_transform(predicted_stock_price)
+
+    # Plot results
+    plt.figure(figsize=(12, 6))
+    plt.plot(data.index[seq_length:], data.values[seq_length:], label="Actual Price")
+    plt.plot(data.index[seq_length:], predicted_stock_price, label="Predicted Price")
+    plt.xlabel("Date")
+    plt.ylabel("Price")
+    plt.title(f"{stock} Stock Price Prediction")
+    plt.legend()
+    plt.show()
+
+# Example usage
+# Define start and end dates for prediction
+start_date = '2022-01-01'
+end_date = '2023-01-01'
+
+# Select stock symbol from the list
+selected_stock = "AAPL"  # You can change this to MSFT, GOOGL, or any other stock symbol
+
+# Call the prediction function
+stock_price_prediction(selected_stock, start_date, end_date)
